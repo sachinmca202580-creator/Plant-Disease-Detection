@@ -1,46 +1,68 @@
-# Streamlit app
-st.title("🌿 Plant Disease Detection Using CNN")
-st.write("Upload a plant leaf image to detect disease and get precautions.")
+import streamlit as st
+import torch
+from torchvision import models, transforms
+from torch import nn
+from PIL import Image
 
-uploaded_file = st.file_uploader(
-    "Choose an image...",
-    type=["jpg", "jpeg", "png"]
-)
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-if uploaded_file is not None:
-    # Load image
-    image = Image.open(uploaded_file).convert('RGB')
+model = models.resnet18(weights=None)
+model.fc = nn.Linear(in_features=512, out_features=4)
+model = model.to(device)
 
-    # Display image
-    st.image(image, caption="Uploaded Image", use_container_width=True)
+model_path = "model.pth"
+state_dict = torch.load(model_path, map_location=device)
+model.load_state_dict(state_dict)
+model.eval()
 
-    # Loading animation
-    with st.spinner("🔍 Analyzing Leaf Image..."):
-        result = predict_image(image)
+transform = transforms.Compose([
+    transforms.Resize((224, 224)),
+    transforms.ToTensor(),
+    transforms.Normalize(
+        mean=[0.485, 0.456, 0.406],
+        std=[0.229, 0.224, 0.225]
+    )
+])
 
-    # Prediction Result
-    st.success(f"✅ Predicted Disease: {result}")
+def predict_image(image):
+    try:
+        input_tensor = transform(image).unsqueeze(0).to(device)
 
-    # Precautions Section
+        with torch.no_grad():
+            outputs = model(input_tensor)
+            _, predicted_class = torch.max(outputs, 1)
+
+        class_labels = {
+            0: "Blight",
+            1: "Common_Rust",
+            2: "Gray_Leaf_Spot",
+            3: "Healthy"
+        }
+
+        return class_labels[predicted_class.item()]
+
+    except Exception as e:
+        return f"Error: {e}"
+
+
+def show_precautions(result):
     st.subheader("🌱 Recommended Precautions")
 
     if result == "Healthy":
         st.info("""
-        ✅ The leaf appears healthy.
+        ✅ **Leaf Status: Healthy**
 
-        **Precautions:**
         - Provide proper water and sunlight.
         - Monitor leaves regularly.
-        - Maintain soil fertility.
         - Avoid overwatering.
+        - Maintain soil fertility.
         - Keep the field clean and weed-free.
         """)
 
     elif result == "Common_Rust":
         st.warning("""
-        ⚠️ Common Rust Detected
+        ⚠️ **Disease Detected: Common Rust**
 
-        **Precautions:**
         - Remove infected leaves immediately.
         - Avoid watering directly on leaves.
         - Improve air circulation around plants.
@@ -50,9 +72,8 @@ if uploaded_file is not None:
 
     elif result == "Blight":
         st.warning("""
-        ⚠️ Blight Detected
+        ⚠️ **Disease Detected: Blight**
 
-        **Precautions:**
         - Remove infected plant parts.
         - Use disease-free seeds.
         - Avoid overhead irrigation.
@@ -62,9 +83,8 @@ if uploaded_file is not None:
 
     elif result == "Gray_Leaf_Spot":
         st.warning("""
-        ⚠️ Gray Leaf Spot Detected
+        ⚠️ **Disease Detected: Gray Leaf Spot**
 
-        **Precautions:**
         - Remove crop residue after harvest.
         - Use resistant maize varieties.
         - Maintain proper plant spacing.
@@ -72,6 +92,38 @@ if uploaded_file is not None:
         - Apply fungicide if disease becomes severe.
         """)
 
-    # Footer
+
+st.set_page_config(
+    page_title="Plant Disease Detection",
+    page_icon="🌿",
+    layout="centered"
+)
+
+st.title("🌿 Plant Disease Detection Using CNN")
+st.write("Upload a plant leaf image to detect disease and get recommended precautions.")
+
+uploaded_file = st.file_uploader(
+    "Choose an image...",
+    type=["jpg", "jpeg", "png"]
+)
+
+if uploaded_file is not None:
+    image = Image.open(uploaded_file).convert("RGB")
+
+    st.image(
+        image,
+        caption="Uploaded Image",
+        use_container_width=True
+    )
+
+    with st.spinner("🔍 Analyzing leaf image..."):
+        result = predict_image(image)
+
+    if result.startswith("Error"):
+        st.error(result)
+    else:
+        st.success(f"✅ Predicted Disease: {result}")
+        show_precautions(result)
+
     st.markdown("---")
     st.caption("Developed using CNN, PyTorch and Streamlit")
