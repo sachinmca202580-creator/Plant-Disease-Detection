@@ -76,7 +76,7 @@ def show_precautions(result):
 
         - Remove infected plant parts.
         - Use disease-free seeds.
-        - Avoid overhead irrigation.
+        - Avoid overhead irrigation..
         - Apply suitable fungicide.
         - Rotate crops to reduce disease spread.
         """)
