@@ -1,11 +1,22 @@
 import streamlit as st
 import torch
+import torch.nn.functional as F
 from torchvision import models, transforms
 from torch import nn
 from PIL import Image
+import matplotlib.pyplot as plt
 
+# ---------------- PAGE CONFIG ----------------
+st.set_page_config(
+    page_title="Plant Disease Detection",
+    page_icon="🌿",
+    layout="wide"
+)
+
+# ---------------- DEVICE ----------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+# ---------------- MODEL LOAD ----------------
 model = models.resnet18(weights=None)
 model.fc = nn.Linear(in_features=512, out_features=4)
 model = model.to(device)
@@ -15,6 +26,31 @@ state_dict = torch.load(model_path, map_location=device)
 model.load_state_dict(state_dict)
 model.eval()
 
+# ---------------- CLASS LABELS ----------------
+class_labels = {
+    0: "Blight",
+    1: "Common_Rust",
+    2: "Gray_Leaf_Spot",
+    3: "Healthy"
+}
+
+# ---------------- DISEASE DESCRIPTION ----------------
+disease_info = {
+    "Blight": "Blight causes brown or dark patches on leaves and can spread quickly if not controlled.",
+    "Common_Rust": "Common Rust appears as reddish-orange spots on leaves and affects plant growth.",
+    "Gray_Leaf_Spot": "Gray Leaf Spot causes gray or brown lesions on leaves and reduces photosynthesis.",
+    "Healthy": "The plant leaf appears healthy with no visible disease symptoms."
+}
+
+# ---------------- TREATMENT SUGGESTION ----------------
+treatment = {
+    "Blight": "Remove infected leaves, avoid overhead watering, and apply recommended fungicide.",
+    "Common_Rust": "Use resistant varieties, improve air circulation, and apply fungicide if needed.",
+    "Gray_Leaf_Spot": "Avoid excess moisture, remove affected leaves, and use proper fungicide treatment.",
+    "Healthy": "No treatment required. Continue regular monitoring and proper watering."
+}
+
+# ---------------- IMAGE PREPROCESSING ----------------
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
@@ -24,106 +60,70 @@ transform = transforms.Compose([
     )
 ])
 
+# ---------------- PREDICTION FUNCTION ----------------
 def predict_image(image):
-    try:
-        input_tensor = transform(image).unsqueeze(0).to(device)
+    image = image.convert("RGB")
+    input_tensor = transform(image).unsqueeze(0).to(device)
 
-        with torch.no_grad():
-            outputs = model(input_tensor)
-            _, predicted_class = torch.max(outputs, 1)
+    with torch.no_grad():
+        outputs = model(input_tensor)
+        probabilities = F.softmax(outputs, dim=1)
+        confidence, predicted_class = torch.max(probabilities, 1)
 
-        class_labels = {
-            0: "Blight",
-            1: "Common_Rust",
-            2: "Gray_Leaf_Spot",
-            3: "Healthy"
-        }
+    predicted_label = class_labels[predicted_class.item()]
+    confidence_score = confidence.item() * 100
 
-        return class_labels[predicted_class.item()]
+    return predicted_label, confidence_score, probabilities.cpu().numpy()[0]
 
-    except Exception as e:
-        return f"Error: {e}"
+# ---------------- UI ----------------
+st.title("🌿 Plant Disease Detection Using AI")
+st.markdown("Upload a plant leaf image and the AI model will predict the plant condition.")
 
-
-def show_precautions(result):
-    st.subheader("🌱 Recommended Precautions")
-
-    if result == "Healthy":
-        st.info("""
-        ✅ **Leaf Status: Healthy**
-
-        - Provide proper water and sunlight.
-        - Monitor leaves regularly.
-        - Avoid overwatering.
-        - Maintain soil fertility.
-        - Keep the field clean and weed-free.
-        """)
-
-    elif result == "Common_Rust":
-        st.warning("""
-        ⚠️ **Disease Detected: Common Rust**
-
-        - Remove infected leaves immediately.
-        - Avoid watering directly on leaves.
-        - Improve air circulation around plants.
-        - Apply recommended fungicide.
-        - Monitor nearby plants for infection.
-        """)
-
-    elif result == "Blight":
-        st.warning("""
-        ⚠️ **Disease Detected: Blight**
-
-        - Remove infected plant parts.
-        - Use disease-free seeds.
-        - Avoid overhead irrigation..
-        - Apply suitable fungicide.
-        - Rotate crops to reduce disease spread.
-        """)
-
-    elif result == "Gray_Leaf_Spot":
-        st.warning("""
-        ⚠️ **Disease Detected: Gray Leaf Spot**
-
-        - Remove crop residue after harvest.
-        - Use resistant maize varieties.
-        - Maintain proper plant spacing.
-        - Avoid excessive nitrogen fertilizer.
-        - Apply fungicide if disease becomes severe.
-        """)
-
-
-st.set_page_config(
-    page_title="Plant Disease Detection",
-    page_icon="🌿",
-    layout="centered"
-)
-
-st.title("🌿 Plant Disease Detection Using CNN")
-st.write("Upload a plant leaf image to detect disease and get recommended precautions.")
+st.sidebar.title("📌 Project Information")
+st.sidebar.write("**Model:** ResNet18 CNN")
+st.sidebar.write("**Framework:** PyTorch")
+st.sidebar.write("**Interface:** Streamlit")
+st.sidebar.write("**Classes:** 4")
+st.sidebar.write("Blight, Common Rust, Gray Leaf Spot, Healthy")
 
 uploaded_file = st.file_uploader(
-    "Choose an image...",
+    "Upload Leaf Image",
     type=["jpg", "jpeg", "png"]
 )
 
 if uploaded_file is not None:
-    image = Image.open(uploaded_file).convert("RGB")
+    image = Image.open(uploaded_file)
 
-    st.image(
-        image,
-        caption="Uploaded Image",
-        use_container_width=True
-    )
+    col1, col2 = st.columns(2)
 
-    with st.spinner("🔍 Analyzing leaf image..."):
-        result = predict_image(image)
+    with col1:
+        st.subheader("Uploaded Image")
+        st.image(image, use_container_width=True)
 
-    if result.startswith("Error"):
-        st.error(result)
-    else:
-        st.success(f"✅ Predicted Disease: {result}")
-        show_precautions(result)
+    with col2:
+        st.subheader("Prediction Result")
 
-    st.markdown("---")
-    st.caption("Developed using CNN, PyTorch and Streamlit")
+        predicted_label, confidence_score, probabilities = predict_image(image)
+
+        st.success(f"Predicted Disease: {predicted_label}")
+        st.info(f"Confidence Score: {confidence_score:.2f}%")
+
+        st.subheader("Disease Description")
+        st.write(disease_info[predicted_label])
+
+        st.subheader("Recommended Treatment")
+        st.write(treatment[predicted_label])
+
+    # ---------------- MATPLOTLIB GRAPH ----------------
+    st.subheader("Prediction Probability Graph")
+
+    fig, ax = plt.subplots()
+    ax.bar(class_labels.values(), probabilities * 100)
+    ax.set_ylabel("Probability (%)")
+    ax.set_title("Disease Prediction Probability")
+    plt.xticks(rotation=20)
+
+    st.pyplot(fig)
+
+else:
+    st.warning("Please upload a plant leaf image to get prediction.")
