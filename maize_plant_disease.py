@@ -6,51 +6,64 @@ from torch import nn
 from PIL import Image
 import matplotlib.pyplot as plt
 
+
 # ---------------- PAGE CONFIG ----------------
 st.set_page_config(
-    page_title="Plant Disease Detection",
+    page_title="Plant Disease Detection AI",
     page_icon="🌿",
     layout="wide"
 )
 
+
 # ---------------- DEVICE ----------------
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-# ---------------- MODEL LOAD ----------------
-model = models.resnet18(weights=None)
-model.fc = nn.Linear(in_features=512, out_features=4)
-model = model.to(device)
-
-model_path = "model.pth"
-state_dict = torch.load(model_path, map_location=device)
-model.load_state_dict(state_dict)
-model.eval()
 
 # ---------------- CLASS LABELS ----------------
 class_labels = {
     0: "Blight",
-    1: "Common_Rust",
-    2: "Gray_Leaf_Spot",
+    1: "Common Rust",
+    2: "Gray Leaf Spot",
     3: "Healthy"
 }
 
-# ---------------- DISEASE DESCRIPTION ----------------
+
+# ---------------- DISEASE INFORMATION ----------------
 disease_info = {
-    "Blight": "Blight causes brown or dark patches on leaves and can spread quickly if not controlled.",
-    "Common_Rust": "Common Rust appears as reddish-orange spots on leaves and affects plant growth.",
-    "Gray_Leaf_Spot": "Gray Leaf Spot causes gray or brown lesions on leaves and reduces photosynthesis.",
-    "Healthy": "The plant leaf appears healthy with no visible disease symptoms."
+    "Blight": "Blight causes brown or dark patches on maize leaves. It can spread quickly and reduce crop yield if not controlled early.",
+    "Common Rust": "Common Rust appears as reddish-orange or brown spots on leaves. It affects leaf health and reduces photosynthesis.",
+    "Gray Leaf Spot": "Gray Leaf Spot produces gray or brown rectangular lesions on leaves. It can damage large leaf areas and weaken the plant.",
+    "Healthy": "The leaf appears healthy. No visible disease symptoms are detected by the model."
 }
 
-# ---------------- TREATMENT SUGGESTION ----------------
-treatment = {
-    "Blight": "Remove infected leaves, avoid overhead watering, and apply recommended fungicide.",
-    "Common_Rust": "Use resistant varieties, improve air circulation, and apply fungicide if needed.",
-    "Gray_Leaf_Spot": "Avoid excess moisture, remove affected leaves, and use proper fungicide treatment.",
-    "Healthy": "No treatment required. Continue regular monitoring and proper watering."
+
+# ---------------- PRECAUTION / TREATMENT ----------------
+precautions = {
+    "Blight": "Remove infected leaves, avoid overhead watering, maintain field hygiene, and use recommended fungicide if infection spreads.",
+    "Common Rust": "Improve air circulation, avoid excessive moisture, remove infected leaves, and apply rust-control fungicide if required.",
+    "Gray Leaf Spot": "Avoid excess moisture, maintain proper plant spacing, remove affected leaves, and use suitable fungicide treatment.",
+    "Healthy": "No treatment is required. Continue regular watering, proper sunlight, and periodic monitoring."
 }
 
-# ---------------- IMAGE PREPROCESSING ----------------
+
+# ---------------- MODEL LOAD ----------------
+@st.cache_resource
+def load_model():
+    model = models.resnet18(weights=None)
+    model.fc = nn.Linear(in_features=512, out_features=4)
+
+    state_dict = torch.load("model.pth", map_location=device)
+    model.load_state_dict(state_dict)
+
+    model.to(device)
+    model.eval()
+    return model
+
+
+model = load_model()
+
+
+# ---------------- IMAGE TRANSFORM ----------------
 transform = transforms.Compose([
     transforms.Resize((224, 224)),
     transforms.ToTensor(),
@@ -59,6 +72,7 @@ transform = transforms.Compose([
         std=[0.229, 0.224, 0.225]
     )
 ])
+
 
 # ---------------- PREDICTION FUNCTION ----------------
 def predict_image(image):
@@ -72,32 +86,55 @@ def predict_image(image):
 
     predicted_label = class_labels[predicted_class.item()]
     confidence_score = confidence.item() * 100
+    all_probabilities = probabilities.cpu().numpy()[0] * 100
 
-    return predicted_label, confidence_score, probabilities.cpu().numpy()[0]
+    return predicted_label, confidence_score, all_probabilities
+
 
 # ---------------- UI ----------------
 st.title("🌿 Plant Disease Detection Using AI")
-st.markdown("Upload a plant leaf image and the AI model will predict the plant condition.")
-
-st.sidebar.title("📌 Project Information")
-st.sidebar.write("**Model:** ResNet18 CNN")
-st.sidebar.write("**Framework:** PyTorch")
-st.sidebar.write("**Interface:** Streamlit")
-st.sidebar.write("**Classes:** 4")
-st.sidebar.write("Blight, Common Rust, Gray Leaf Spot, Healthy")
-
-uploaded_file = st.file_uploader(
-    "Upload Leaf Image",
-    type=["jpg", "jpeg", "png"]
+st.markdown(
+    """
+    This application detects maize plant leaf disease using a **ResNet18 CNN model**.
+    You can upload a leaf image or capture one using your camera.
+    """
 )
 
-if uploaded_file is not None:
-    image = Image.open(uploaded_file)
+st.sidebar.header("📌 Project Details")
+st.sidebar.write("**Project:** Plant Disease Detection Using AI")
+st.sidebar.write("**Model:** ResNet18 CNN")
+st.sidebar.write("**Framework:** PyTorch")
+st.sidebar.write("**Frontend:** Streamlit")
+st.sidebar.write("**Classes:** Blight, Common Rust, Gray Leaf Spot, Healthy")
 
+input_method = st.radio(
+    "Choose input method:",
+    ["Upload Image", "Camera Scan"]
+)
+
+image = None
+
+if input_method == "Upload Image":
+    uploaded_file = st.file_uploader(
+        "Upload a maize leaf image",
+        type=["jpg", "jpeg", "png"]
+    )
+
+    if uploaded_file is not None:
+        image = Image.open(uploaded_file)
+
+else:
+    camera_file = st.camera_input("Capture maize leaf image")
+
+    if camera_file is not None:
+        image = Image.open(camera_file)
+
+
+if image is not None:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.subheader("Uploaded Image")
+        st.subheader("Selected Leaf Image")
         st.image(image, use_container_width=True)
 
     with col2:
@@ -111,19 +148,20 @@ if uploaded_file is not None:
         st.subheader("Disease Description")
         st.write(disease_info[predicted_label])
 
-        st.subheader("Recommended Treatment")
-        st.write(treatment[predicted_label])
+        st.subheader("Precaution / Treatment")
+        st.write(precautions[predicted_label])
 
-    # ---------------- MATPLOTLIB GRAPH ----------------
     st.subheader("Prediction Probability Graph")
 
-    fig, ax = plt.subplots()
-    ax.bar(class_labels.values(), probabilities * 100)
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.bar(list(class_labels.values()), probabilities)
     ax.set_ylabel("Probability (%)")
-    ax.set_title("Disease Prediction Probability")
+    ax.set_xlabel("Disease Classes")
+    ax.set_title("Model Prediction Probability")
+    ax.set_ylim(0, 100)
     plt.xticks(rotation=20)
 
     st.pyplot(fig)
 
 else:
-    st.warning("Please upload a plant leaf image to get prediction.")
+    st.warning("Please upload or capture a maize leaf image to start detection.")
